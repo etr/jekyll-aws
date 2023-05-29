@@ -81,6 +81,10 @@ Resources:
       from our S3 bucket.
     Properties:
       BucketName: !Ref WebsiteURL
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: 404.html
       Tags:
         - Key: Project
           Value: !Ref ProjectName
@@ -93,10 +97,10 @@ Resources:
       Bucket: !Ref WebsiteS3Bucket
       PolicyDocument:
         Statement:
-        - Sid: OAIAccess
+        - Sid: PublicReadGetObject
           Effect: Allow
-          Principal:
-            CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+          Principal: '*'
+          ###CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
           Action: s3:GetObject
           Resource: !Join ['', ['arn:aws:s3:::', !Ref WebsiteS3Bucket, '/*']]
   WebsiteLogsS3Bucket:
@@ -105,6 +109,9 @@ Resources:
       This S3 bucket is dedicated to storing the logs for the static website.
     Properties:
       BucketName: !Join ['-', [!Ref WebsiteURL, 'logs']]
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
       Tags:
         - Key: Project
           Value: !Ref ProjectName
@@ -121,10 +128,10 @@ Resources:
           Value: !Ref ProjectName
       DistributionConfig:
         Origins:
-        - DomainName: !Join ['.', [!Ref WebsiteURL, 's3.amazonaws.com']]
-          Id: S3Origin
-          S3OriginConfig:
-            OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOriginAccessIdentity]]
+        - DomainName: !Select [2, !Split ["/", !GetAtt WebsiteS3Bucket.WebsiteURL]]
+          Id: CustomOrigin
+          CustomOriginConfig:
+            OriginProtocolPolicy: 'http-only'
         Enabled: true
         HttpVersion: http2
         DefaultRootObject: index.html
@@ -133,20 +140,18 @@ Resources:
           Bucket: !GetAtt WebsiteLogsS3Bucket.DomainName
         Aliases:
         - !Ref WebsiteURL
+        - !Join ['.', ['www', !Ref WebsiteURL]]
         DefaultCacheBehavior:
           AllowedMethods:
           - GET
           - HEAD
-          TargetOriginId: S3Origin
+          TargetOriginId: CustomOrigin
           Compress: true
           ForwardedValues:
             QueryString: false
             Cookies:
               Forward: none
           ViewerProtocolPolicy: redirect-to-https
-          LambdaFunctionAssociations:
-            - EventType: origin-request
-              LambdaFunctionARN: !Ref LambdaPathFixerVersion
         PriceClass: !Ref CloudFrontPriceClass
         ViewerCertificate:
           AcmCertificateArn: !Ref AcmCertificateArn
@@ -167,6 +172,11 @@ Resources:
       HostedZoneName: !Join ['', [!Ref WebsiteURL, .]]
       RecordSets:
       - Name: !Ref WebsiteURL
+        Type: A
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2 # yes, this is the exact value it has to be; it should not be a variable
+          DNSName: !GetAtt CloudFrontDistribution.DomainName
+      - Name: !Join ['.', ['www', !Ref WebsiteURL]]
         Type: A
         AliasTarget:
           HostedZoneId: Z2FDTNDATAQYW2 # yes, this is the exact value it has to be; it should not be a variable
@@ -277,7 +287,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:4.0
+        Image: aws/codebuild/standard:7.0
         EnvironmentVariables:
           - Name: WEBSITE_S3_BUCKET
             Value: !Join ['', ['s3://', !Ref WebsiteS3Bucket]]
@@ -290,10 +300,14 @@ Resources:
           phases:
             install:
               runtime-versions:
-                ruby: 2.7
+                ruby: 3.2
               commands:
+                - apt update
+                - apt install -y imagemagick
+                - gem update --system
+                - gem install sass-embedded -v 1.62.1
                 - gem install bundler jekyll
-                # if your Jekyll project uses CoffeeScipt you'll need to install NodeJS here
+                # if your Jekyll project uses CoffeeScript you'll need to install NodeJS here
             build:
               commands:
                 - bundle install
