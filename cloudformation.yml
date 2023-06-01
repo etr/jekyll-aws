@@ -314,6 +314,9 @@ Resources:
                 # build for production to enable items like Google Analytics
                 - JEKYLL_ENV=production bundle exec jekyll build
                 - aws s3 sync --delete _site/ $WEBSITE_S3_BUCKET
+                - aws s3 cp $WEBSITE_S3_BUCKET $WEBSITE_S3_BUCKET --exclude "*" --include "*.webp" --include "*.png" --include "*.jpg" --include "*.jpeg" --recursive --metadata-directive REPLACE --acl public-read --cache-control max-age=31536000,public
+                - aws s3 cp $WEBSITE_S3_BUCKET $WEBSITE_S3_BUCKET --exclude "*" --include "*.js" --recursive --metadata-directive REPLACE --acl public-read --content-type "application/x-javascript" --cache-control max-age=31536000,public
+                - aws s3 cp $WEBSITE_S3_BUCKET $WEBSITE_S3_BUCKET --exclude "*" --include "*.css" --recursive --metadata-directive REPLACE --acl public-read --content-type "text/css" --cache-control max-age=31536000,public
                 - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths '/*'
   CodeBuildRole:
     Type: AWS::IAM::Role
