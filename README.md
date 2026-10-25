@@ -4,6 +4,41 @@ Automatically deploy your GitHub-hosted Jekyll project on AWS with your own cust
 
 CI/CD is also included to automatically deploy when you push your Jekyll changes to GitHub.  
 
+Deploy blog content only through the existing GitHub → CodePipeline → CodeBuild
+path. Commit source changes and push the configured branch; complete any
+existing pipeline approval stage. Draft posts use `published: false`, and the
+normal Jekyll build excludes them. Do not deploy local `_site` output, upload
+replacement website objects, or invalidate CloudFront outside the pipeline.
+Roll content back by reverting the source commit and deploying that revision
+through the same pipeline. Repair source integration failures before deploying;
+they do not justify a direct-upload fallback.
+
+Pages use trailing-slash URLs backed by `<path>/index.html`. CloudFront normalizes
+directory URLs, preserves query strings, and serves the site's `404.html` with
+status 404. The S3 REST origin is private behind Origin Access Control.
+
+For existing stacks, follow [the migration guide](CLEAN_URLS_AND_DEPLOYMENT.md).
+Render changes onto the
+stack's actual template rather than replacing a drifted deployment with this
+repository's template:
+
+```sh
+python3 scripts/migration.py current-template.yml cutover.json --phase cutover
+python3 scripts/migration.py current-template.yml private.json --phase private
+```
+
+Review CloudFormation change sets, verify the cutover, then apply the private
+phase. Optional `--redirects <site-owned-json>` supplies exact historical URL
+mappings; arbitrary `.html` files remain addressable. The renderer requires
+PyYAML. Routing tests run with `node --test test/clean-urls.test.cjs`; template
+tests run with `python3 -m unittest discover -s test -p 'test_*.py'`.
+
+Existing stacks can differ from the generic template. Keep deployment-specific
+templates and operational records in a private infrastructure repository.
+Preserve resource ownership and existing development/approval stages when
+repairing credentials. Credential values are CloudFormation parameters and
+must not be stored in source control.
+
 Requires a GitHub Jekyll project, a GitHub personal access token, an AWS account, and a Route53-purchased domain.
 
 Associated blog post can be found [here](https://ethanfahy.cloud/2019/09/24/jekyll-aws.html).
